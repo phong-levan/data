@@ -1,6 +1,7 @@
 streamlit
 pandas
-folium
-streamlit-folium
-requests
-beautifulsoup4
+xarray
+rioxarray
+geopandas
+netCDF4
+matplotlib
