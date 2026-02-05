@@ -2,7 +2,5 @@ streamlit
 pandas
 folium
 streamlit-folium
-openpyxl
-matplotlib
-cartopy
-scipy
+requests
+beautifulsoup4
