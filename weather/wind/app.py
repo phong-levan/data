@@ -3,7 +3,7 @@ import streamlit.components.v1 as components
 
 # Tọa độ bao quát Việt Nam và Biển Đông
 lat, lon, zoom = 16.0, 108.0, 5 
-api_key = "jUL0pDzhodbVJ5Bdht9J10do7j8lZsa9"
+api_key = "0kgGyKktQw84FeBLRRFKE9YW1wkLLaAg"
 
 st.title("Hệ thống Giám sát Khí tượng Toàn vùng")
 
