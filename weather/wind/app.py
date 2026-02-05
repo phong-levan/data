@@ -1,41 +1,19 @@
-# -*- coding: utf-8 -*-
 import streamlit as st
 import streamlit.components.v1 as components
 
-# --- CẤU HÌNH GIAO DIỆN ---
-st.set_page_config(page_title="Hệ thống Giám sát Khí tượng Toàn vùng", layout="wide")
+# Tọa độ bao quát Việt Nam và Biển Đông
+lat, lon, zoom = 16.0, 108.0, 5 
+api_key = "jUL0pDzhodbVJ5Bdht9J10do7j8lZsa9"
 
-st.markdown("""
-    <style>
-    /* Làm cho ứng dụng tràn viền hoàn toàn */
-    .main .block-container { padding: 0 !important; max-width: 100% !important; }
-    iframe { width: 100%; height: 92vh; border: none; }
-    </style>
-    """, unsafe_allow_html=True)
+st.title("Hệ thống Giám sát Khí tượng Toàn vùng")
 
-# --- 1. ĐỊNH NGHĨA CÁC LỚP DỮ LIỆU WINDY ---
-# Các tham số này khớp với các lớp "nguyên trạng" trên Windy
-layers = {
-    "Trường Gió (Wind)": "wind",
-    "Lượng mưa (Rain)": "rain",
-    "Nhiệt độ (Temp)": "temp",
-    "Khí áp (Pressure)": "pressure",
-    "Độ ẩm (Clouds/RH)": "clouds"
-}
-
-# --- 2. THANH ĐIỀU KHIỂN ---
-with st.sidebar:
-    st.header("🌐 Theo dõi Toàn vùng")
-    selected_label = st.radio("Chọn yếu tố cần quan sát:", list(layers.keys()))
-    layer_slug = layers[selected_label]
-    
-    st.divider()
-    st.info("Bản đồ bao phủ toàn bộ lãnh thổ Việt Nam và khu vực Biển Đông, xung quanh.")
-
-# --- 3. NHÚNG BẢN ĐỒ TOÀN VÙNG (IFRAME WINDY) ---
-# Tọa độ 16.0, 108.0 và zoom 5 sẽ bao phủ từ miền Bắc xuống tận phía Nam và ra xa ngoài khơi
-windy_url = f"https://www.windy.com/?{layer_slug},16.000,108.000,5"
-
-components.iframe(windy_url)
-
-st.caption(f"Đang hiển thị dữ liệu {selected_label} thực tế từ Windy.com")
+# Nhúng bản đồ Windy qua API (Dạng Map Forecast)
+windy_script = f"""
+    <iframe width="100%" height="600" 
+        src="https://www.windy.com/img/js/leaflet-api.js?key={api_key}" 
+        frameborder="0">
+    </iframe>
+"""
+# Lưu ý: Với Streamlit, cách nhúng Iframe chuyên sâu nhất là dùng URL nhúng có tham số
+windy_url = f"https://www.windy.com/?wind,{lat},{lon},{zoom},m:eU0aj6U"
+components.iframe(windy_url, height=700)
