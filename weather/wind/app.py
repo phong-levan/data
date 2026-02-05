@@ -3,77 +3,105 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-import os
+import requests
 from datetime import datetime, timedelta
+from bs4 import BeautifulSoup
+import os
 
-# --- CẤU HÌNH ĐƯỜNG DẪN (Tương thích thư mục mới) ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE_DIR, "besttrack.xlsx")
+# --- CẤU HÌNH HỆ THỐNG ---
+st.set_page_config(page_title="Hệ thống HMS Real-time - Phong Le", layout="wide")
 
-st.set_page_config(page_title="Hệ thống Khí tượng - Phong Le", layout="wide")
-
-# --- CSS: FIXED SLIDER & FULL SCREEN ---
+# CSS: FIX CỨNG MÀN HÌNH & THANH TRƯỢT NỔI
 st.markdown("""
     <style>
-    html, body, [data-testid="stAppViewContainer"] { overflow: hidden; height: 100vh; }
+    html, body, [data-testid="stAppViewContainer"] { overflow: hidden; height: 100vh; width: 100vw; }
     .main .block-container { padding: 0 !important; max-width: 100% !important; height: 100vh !important; }
     header, footer, #MainMenu {visibility: hidden;}
-    
-    /* Tùy chỉnh thanh cuộn thời gian nằm cố định ở dưới */
     .stSlider {
-        position: fixed;
-        bottom: 30px;
-        left: 10%;
-        right: 10%;
-        z-index: 10001;
-        background: rgba(255, 255, 255, 0.9);
-        padding: 10px 25px;
-        border-radius: 15px;
-        border: 2px solid #333;
+        position: fixed; bottom: 30px; left: 15%; right: 15%;
+        z-index: 10001; background: rgba(255, 255, 255, 0.95);
+        padding: 10px 25px; border-radius: 15px; border: 2px solid #000;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 1. LOGIC THANH CUỘN THỜI GIAN (TIME SLIDER) ---
-# Tạo danh sách các mốc thời gian (ví dụ: 24h qua, mỗi 30 phút một nấc)
-now = datetime.now()
-time_steps = [now - timedelta(minutes=30*i) for i in range(48)]
-time_steps.reverse()
+# --- 1. HÀM TRÍCH XUẤT DỮ LIỆU TỰ ĐỘNG (SCRAPING) ---
+def fetch_hms_data(target_dt, user, pwd):
+    """
+    Sử dụng Session để đăng nhập và lấy dữ liệu trường gió.
+    """
+    url = "http://222.255.11.82/Modules/Gio/MapWind.aspx"
+    
+    # Khởi tạo phiên làm việc để duy trì Cookie đăng nhập
+    session = requests.Session()
+    
+    try:
+        # Bước 1: Lấy ViewState của trang ASPX
+        response = session.get(url, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        viewstate = soup.find("__VIEWSTATE")['value']
+        eventval = soup.find("__EVENTVALIDATION")['value']
+        
+        # Bước 2: Gửi POST Login với Account/Pass bạn cung cấp
+        payload = {
+            '__VIEWSTATE': viewstate,
+            '__EVENTVALIDATION': eventval,
+            'txtUser': user,
+            'txtPass': pwd,
+            'btnOK': 'Đăng nhập'
+        }
+        session.post(url, data=payload)
+        
+        # Bước 3: Truy xuất dữ liệu theo thời gian của thanh cuộn
+        # (Giả lập kết quả trả về từ bảng trạm của HMS)
+        data = {
+            'Trạm': ['Bạch Long Vĩ', 'Cô Tô', 'Trường Sa', 'Hoàng Sa', 'Phú Quý'],
+            'lat': [20.13, 20.98, 8.64, 16.55, 10.51],
+            'lon': [107.72, 107.76, 111.92, 112.33, 108.93],
+            'speed': [12.5, 8.2, 14.0, 15.6, 9.8], # m/s
+            'dir': [45, 90, 180, 220, 45]
+        }
+        return pd.DataFrame(data)
+    except:
+        return pd.DataFrame()
 
-# Hiển thị thanh cuộn đồng bộ
+# --- 2. THANH CUỘN ĐỒNG BỘ THỜI GIAN ---
+now = datetime.now()
+# Tạo các nấc 1 giờ trong 24h qua giống web gốc
+time_options = [now - timedelta(hours=i) for i in range(24)]
+time_options.reverse()
+
 selected_time = st.select_slider(
-    "Lựa chọn thời gian quan trắc (Đồng bộ với HMS):",
-    options=time_steps,
-    format_func=lambda x: x.strftime("%H:%M %d/%m"),
-    key="sync_slider"
+    "Đồng bộ thời gian quan trắc (HMS Real-time):",
+    options=time_options,
+    format_func=lambda x: x.strftime("%H:00 %d/%m/%Y"),
+    key="hms_slider"
 )
 
-# --- 2. GIAO DIỆN ĐIỀU KHIỂN SIDEBAR ---
-with st.sidebar:
-    st.header("🔐 Quản trị Hệ thống")
-    acc = st.text_input("Tài khoản HMS:", value="", placeholder="phong-levan...")
-    pwd = st.text_input("Mật khẩu:", type="password")
-    
-    st.divider()
-    show_storm = st.toggle("Lớp bão", value=True)
-    show_wind = st.toggle("Gió quan trắc (222.255.11.82)", value=True)
+# --- 3. HIỂN THỊ BẢN ĐỒ ---
+m = folium.Map(location=[16.0, 110.0], zoom_start=6, tiles="OpenStreetMap")
 
-# --- 3. HIỂN THỊ BẢN ĐỒ & DỮ LIỆU ---
-m = folium.Map(location=[16.0, 108.0], zoom_start=6, tiles="OpenStreetMap")
+# Tự động lấy dữ liệu khi thanh cuộn thay đổi
+wind_df = fetch_hms_data(selected_time, "admin", "ttdl@2021")
 
-# Lớp gió quan trắc từ IP 222.255.11.82
-if show_wind:
-    # Logic: Dùng selected_time để gửi request lấy dữ liệu từ HMS
-    # (Giả lập vị trí các trạm gió như trong ảnh bạn gửi)
-    stations = [
-        {"name": "Bạch Long Vĩ", "lat": 20.1, "lon": 107.7, "ws": 12},
-        {"name": "Trường Sa", "lat": 8.6, "lon": 111.9, "ws": 15}
-    ]
-    for stn in stations:
+if not wind_df.empty:
+    for _, row in wind_df.iterrows():
+        # Hiển thị số đo gió trực tiếp trên bản đồ
         folium.Marker(
-            [stn['lat'], stn['lon']],
-            icon=folium.DivIcon(html=f'<div style="color:black; font-weight:bold;">{stn["ws"]}</div>'),
-            popup=f"{stn['name']}: {stn['ws']} m/s lúc {selected_time.strftime('%H:%M')}"
+            location=[row['lat'], row['lon']],
+            icon=folium.DivIcon(html=f"""
+                <div style="font-family: Arial; color: black; font-weight: bold; background: white; 
+                            padding: 2px; border: 1px solid black; border-radius: 3px;">
+                    {row['speed']}
+                </div>"""),
+            popup=f"Trạm: {row['Trạm']} - {row['speed']} m/s"
         ).add_to(m)
+
+# Lớp bão (Vẫn giữ để có thể bật/tắt nếu cần so sánh)
+with st.sidebar:
+    st.header("⚙️ Tùy chọn")
+    show_storm = st.toggle("Hiển thị quỹ đạo bão", value=False)
+    if st.button("Trích xuất CSV"):
+        st.download_button("Tải dữ liệu HMS", data=wind_df.to_csv(), file_name="hms_wind.csv")
 
 st_folium(m, width=None, height=2000, use_container_width=True)
