@@ -4,15 +4,16 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 import requests
+import json
+import os
 from datetime import datetime, timedelta
 
-# --- CẤU HÌNH HỆ THỐNG ---
-st.set_page_config(page_title="Hệ thống Khí tượng Quốc gia - Phong Le", layout="wide")
+# --- 1. CẤU HÌNH GIAO DIỆN ---
+st.set_page_config(page_title="Hệ thống Khí tượng Việt Nam", layout="wide")
 
-# CSS: Giao diện tràn viền và Thanh cuộn cố định
 st.markdown("""
     <style>
-    html, body, [data-testid="stAppViewContainer"] { overflow: hidden; height: 100vh; width: 100vw; }
+    html, body, [data-testid="stAppViewContainer"] { overflow: hidden; height: 100vh; }
     .main .block-container { padding: 0 !important; max-width: 100% !important; height: 100vh !important; }
     header, footer, #MainMenu {visibility: hidden;}
     .stSlider {
@@ -23,74 +24,70 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 1. ĐỊNH NGHĨA KHUNG LƯỚI VIỆT NAM ---
-# Tạo một lưới tọa độ bao phủ lãnh thổ VN (giãn cách 2 độ để web chạy nhanh)
-LAT_RANGE = [8, 12, 16, 20, 23]
-LON_RANGE = [103, 105, 107, 109, 111, 113]
-VN_BOUNDARY_URL = "https://raw.githubusercontent.com/tony1212/Vietnam-States-Shell-Json/master/Vietnam.json"
+# --- 2. TẢI DỮ LIỆU RANH GIỚI NỘI BỘ ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+GEO_PATH = os.path.join(BASE_DIR, "vietnam.json")
 
+@st.cache_data
+def load_geojson():
+    if os.path.exists(GEO_PATH):
+        with open(GEO_PATH, encoding='utf-8') as f:
+            return json.load(f)
+    return None
+
+# --- 3. LẤY DỮ LIỆU KHÍ TƯỢNG (GRID) ---
 @st.cache_data(ttl=3600)
-def fetch_grid_weather(selected_hour):
-    """Lấy dữ liệu 5 biến từ Open-Meteo cho toàn bộ lưới VN"""
-    data_list = []
-    for lat in LAT_RANGE:
-        for lon in LON_RANGE:
-            url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,precipitation,surface_pressure,wind_speed_10m&timezone=Asia%2FBangkok"
+def get_weather_grid():
+    # Danh sách tọa độ lưới đại diện phủ khắp VN
+    lats = [8.5, 10.5, 12.5, 14.5, 16.5, 18.5, 20.5, 22.5]
+    lons = [103.5, 105.5, 107.5, 109.5, 111.5, 113.5]
+    
+    data = []
+    for lt in lats:
+        for ln in lons:
+            url = f"https://api.open-meteo.com/v1/forecast?latitude={lt}&longitude={ln}&current=temperature_2m,relative_humidity_2m,precipitation,surface_pressure,wind_speed_10m&timezone=Asia%2FBangkok"
             try:
                 res = requests.get(url, timeout=5).json()['current']
-                data_list.append({
-                    'lat': lat, 'lon': lon,
-                    'temp': res['temperature_2m'],
-                    'rain': res['precipitation'],
-                    'hum': res['relative_humidity_2m'],
-                    'pres': res['surface_pressure'],
+                data.append({
+                    'lat': lt, 'lon': ln,
+                    'temp': res['temperature_2m'], 'rain': res['precipitation'],
+                    'hum': res['relative_humidity_2m'], 'pres': res['surface_pressure'],
                     'wind': res['wind_speed_10m']
                 })
             except: continue
-    return pd.DataFrame(data_list)
+    return pd.DataFrame(data)
 
-# --- 2. THANH CUỘN THỜI GIAN ĐỒNG BỘ ---
-now = datetime.now()
-time_steps = [now - timedelta(hours=i) for i in range(24)]
-time_steps.reverse()
-
-selected_time = st.select_slider(
-    "Đồng bộ thời gian quan trắc toàn quốc:",
-    options=time_steps,
-    format_func=lambda x: x.strftime("%H:00 %d/%m/%Y"),
-    key="global_slider"
-)
-
-# --- 3. HIỂN THỊ BẢN ĐỒ ---
-# Lấy biến số người dùng muốn xem
+# --- 4. GIAO DIỆN VÀ BẢN ĐỒ ---
 with st.sidebar:
-    st.header("📍 Lớp dữ liệu")
-    var_choice = st.radio("Chọn yếu tố hiển thị:", 
-                         ["Nhiệt độ (°C)", "Lượng mưa (mm)", "Độ ẩm (%)", "Khí áp (hPa)", "Gió (km/h)"])
+    st.header("⚙️ Tùy chọn lớp")
+    var_choice = st.selectbox("Yếu tố:", ["Nhiệt độ (°C)", "Lượng mưa (mm)", "Độ ẩm (%)", "Khí áp (hPa)", "Gió (km/h)"])
     var_map = {"Nhiệt độ (°C)": "temp", "Lượng mưa (mm)": "rain", "Độ ẩm (%)": "hum", "Khí áp (hPa)": "pres", "Gió (km/h)": "wind"}
-    target_var = var_map[var_choice]
 
-# Khởi tạo bản đồ Folium
-m = folium.Map(location=[16.5, 107.5], zoom_start=6, tiles="CartoDB positron")
+# Thanh cuộn thời gian
+time_steps = [(datetime.now() - timedelta(hours=i)) for i in range(24)]
+time_steps.reverse()
+st.select_slider("Đồng bộ thời gian:", options=time_steps, format_func=lambda x: x.strftime("%H:00 %d/%m"), key="slider")
 
-# Thêm ranh giới Việt Nam "sẵn có" làm khuôn
-folium.GeoJson(
-    VN_BOUNDARY_URL,
-    name="Biên giới Việt Nam",
-    style_function=lambda x: {'fillColor': '#00000000', 'color': 'red', 'weight': 2}
-).add_to(m)
+# Tạo bản đồ
+m = folium.Map(location=[16.0, 108.0], zoom_start=6, tiles="CartoDB positron")
 
-# Đổ dữ liệu lưới lên bản đồ
-grid_data = fetch_grid_weather(selected_time)
-for _, row in grid_data.iterrows():
-    # Hiển thị vòng tròn màu sắc theo giá trị (giả lập heatmap cắt theo lãnh thổ)
+# Vẽ ranh giới Việt Nam (nếu có file)
+vn_geo = load_geojson()
+if vn_geo:
+    folium.GeoJson(vn_geo, style_function=lambda x: {'color': 'red', 'weight': 2, 'fillOpacity': 0}).add_to(m)
+else:
+    st.error("Thiếu file vietnam.json trong thư mục!")
+
+# Vẽ dữ liệu khí tượng
+df = get_weather_grid()
+for _, row in df.iterrows():
+    val = row[var_map[var_choice]]
     folium.CircleMarker(
         location=[row['lat'], row['lon']],
-        radius=15,
-        color='blue' if row[target_var] < 20 else 'orange',
-        fill=True,
-        fill_opacity=0.4,
-        popup=f"{var_choice}: {row[target_var]}"
+        radius=12,
+        popup=f"{var_choice}: {val}",
+        color='blue' if val < 20 else 'orange',
+        fill=True, fill_opacity=0.6
     ).add_to(m)
 
 st_folium(m, width=2000, height=1200, use_container_width=True)
