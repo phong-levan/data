@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 import os
 
 # --- CẤU HÌNH HỆ THỐNG ---
-st.set_page_config(page_title="Hệ thống HMS Real-time - Phong Le", layout="wide")
+st.set_page_config(page_title="Hệ thống cập nhật thông tin Khí tượng thủy văn", layout="wide")
 
 # CSS: FIX CỨNG MÀN HÌNH & THANH TRƯỢT NỔI
 st.markdown("""
